@@ -1,0 +1,5 @@
+# Real credentials for upload.sh — never commit if this skill is checked into a repo.
+.env
+*.env
+# …but keep the documentation template.
+!example.env

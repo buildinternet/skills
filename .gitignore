@@ -1,0 +1,6 @@
+# Real dotenvs anywhere — never commit (skill example.env templates are kept).
+.env
+**/.env
+
+# OS / editor cruft
+.DS_Store
