@@ -3,8 +3,7 @@
 [![skills.sh](https://skills.sh/b/buildinternet/skills)](https://skills.sh/buildinternet/skills)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
-Agent skills we use at [Build Internet](https://buildinternet.com), shared openly.
-Each lives in [`skills/`](./skills) as a self-contained folder with a `SKILL.md`.
+Agent skills for development. Each lives in [`skills/`](./skills) as a self-contained folder with a `SKILL.md`.
 
 ## Install
 
