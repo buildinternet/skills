@@ -115,18 +115,27 @@ fi
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --selector)    SELECTOR="$2";        shift 2;;
-    --out)         OUT="$2";              shift 2;;
-    --width)       VP_WIDTH="$2";         shift 2;;
-    --height)      VP_HEIGHT="$2";        shift 2;;
-    --full-page)   FULL_PAGE=true;        shift;;
-    --wait)        WAIT_FOR="$2";         shift 2;;
-    --eval)        EVAL_JS="$2";          shift 2;;
-    --upload)      DO_UPLOAD=true;        shift;;
-    --repo)        UPLOAD_REPO="$2";      shift 2;;
-    --ref)         UPLOAD_REF="$2";       shift 2;;
-    --alt)         UPLOAD_ALT="$2";       shift 2;;
-    --img-width)   UPLOAD_IMG_WIDTH="$2"; shift 2;;
+    # Value-taking options: guard $2 before reading it so a missing value gives
+    # a clean error rather than a `set -u` "unbound variable" message.
+    --selector|--out|--width|--height|--wait|--eval|--repo|--ref|--alt|--img-width)
+      if [ $# -lt 2 ]; then
+        echo "error: $1 requires a value" >&2; usage; exit 2
+      fi
+      case "$1" in
+        --selector)    SELECTOR="$2";;
+        --out)         OUT="$2";;
+        --width)       VP_WIDTH="$2";;
+        --height)      VP_HEIGHT="$2";;
+        --wait)        WAIT_FOR="$2";;
+        --eval)        EVAL_JS="$2";;
+        --repo)        UPLOAD_REPO="$2";;
+        --ref)         UPLOAD_REF="$2";;
+        --alt)         UPLOAD_ALT="$2";;
+        --img-width)   UPLOAD_IMG_WIDTH="$2";;
+      esac
+      shift 2;;
+    --full-page)   FULL_PAGE=true;  shift;;
+    --upload)      DO_UPLOAD=true;  shift;;
     -h|--help)     usage; exit 0;;
     *) echo "error: unknown option: $1" >&2; usage; exit 2;;
   esac
@@ -134,6 +143,15 @@ done
 
 if [ -z "$URL" ]; then
   echo "error: <url> is required" >&2; usage; exit 2
+fi
+
+# --width/--height are embedded verbatim (unquoted) into the generated JS, so
+# require plain integers to avoid breakage / injection from arbitrary input.
+if ! [[ "$VP_WIDTH" =~ ^[0-9]+$ ]]; then
+  echo "error: --width must be a positive integer (got: $VP_WIDTH)" >&2; exit 2
+fi
+if ! [[ "$VP_HEIGHT" =~ ^[0-9]+$ ]]; then
+  echo "error: --height must be a positive integer (got: $VP_HEIGHT)" >&2; exit 2
 fi
 
 # ---------------------------------------------------------------------------
@@ -156,8 +174,13 @@ fi
 # After locating it we export NODE_PATH so `node` can require('playwright').
 # ---------------------------------------------------------------------------
 find_playwright_dir() {
-  # Check if already loadable (e.g. NODE_PATH already set, or global install)
-  if node -e "require('playwright')" 2>/dev/null; then
+  # Already loadable? (NODE_PATH set, or resolvable from cwd / a local install.)
+  # Resolve its actual location and pin NODE_PATH to that node_modules, so the
+  # capture script — which runs from /tmp, a different cwd — can require it too.
+  local resolved
+  resolved="$(node -e "try{process.stdout.write(require.resolve('playwright'))}catch(e){process.exit(1)}" 2>/dev/null || true)"
+  if [ -n "$resolved" ]; then
+    export NODE_PATH="${resolved%%/playwright/*}"
     return 0
   fi
 

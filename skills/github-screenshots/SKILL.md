@@ -84,7 +84,7 @@ nothing because React intercepts the native DOM property. Use the native value
 setter and dispatch synthetic events instead:
 
 ```js
-# Pass this to --eval:
+// Pass this to --eval:
 const el = document.querySelector('#my-input');
 Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')
   .set.call(el, 'my value');
