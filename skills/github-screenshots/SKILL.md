@@ -50,10 +50,61 @@ and a bucket with a [public custom domain](https://developers.cloudflare.com/r2/
 
 ### 1. Capture
 
-- **Web UI / live app:** screenshot the page (e.g. a browser-automation tool), or
-  drive the project's app and capture. Save the image locally.
-- **Terminal / CLI output:** capture a terminal screenshot.
-- Already have a file? Skip to upload.
+Use the bundled `capture.sh` script for reliable headless Playwright (Chromium)
+captures. It writes a PNG to a known path and prints that path on stdout — no
+"where did the file go?" ambiguity.
+
+```bash
+<skill-dir>/scripts/capture.sh <url> [options]
+```
+
+**Key flags:**
+
+| Flag | Description |
+|---|---|
+| `--selector <css>` | Capture only that element (element crop). Default: full viewport. |
+| `--out <path>` | Output PNG path. Default: `/tmp/screenshot-<timestamp>.png` (path printed on stdout). |
+| `--width <px>` / `--height <px>` | Viewport size (default 1280×720). |
+| `--full-page` | Capture the entire scrollable page, not just the viewport. |
+| `--wait <selector\|ms>` | Wait for a CSS selector to appear, or sleep N milliseconds, before capturing. |
+| `--eval <js>` | Run arbitrary JS in the page before capturing (e.g. populate form fields). |
+| `--upload` | After capturing, pipe straight into `upload.sh` — capture + upload in one command. |
+| `--repo`, `--ref`, `--alt`, `--img-width` | Forwarded to `upload.sh` when using `--upload`. |
+
+**One-liner capture + upload:**
+
+```bash
+./scripts/capture.sh https://myapp.example.com \
+  --selector ".card" --wait ".card" \
+  --upload --repo myorg/myapp --ref 42 --alt "New card design" --img-width 700
+```
+
+**React controlled-input gotcha** — setting `.value` on a React input does
+nothing because React intercepts the native DOM property. Use the native value
+setter and dispatch synthetic events instead:
+
+```js
+# Pass this to --eval:
+const el = document.querySelector('#my-input');
+Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')
+  .set.call(el, 'my value');
+el.dispatchEvent(new Event('input',  { bubbles: true }));
+el.dispatchEvent(new Event('change', { bubbles: true }));
+```
+
+**Prerequisites:** Node.js + Playwright Chromium.  
+First-time setup:
+```bash
+npx playwright install chromium
+```
+If the browser is missing, `capture.sh` exits with a clear install hint.
+
+**Other capture methods (alternatives):**
+
+- **Interactive browser tool** (e.g. Claude-in-Chrome): works, but the tool may
+  not surface the saved file path — prefer `capture.sh` when you need a known path.
+- **Terminal / CLI output:** capture a terminal screenshot separately.
+- Already have a file? Skip to step 2.
 
 ### 2. Upload
 
