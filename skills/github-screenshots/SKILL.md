@@ -28,16 +28,31 @@ in the markdown. No repo bloat, no browser, no session — and stable URLs.
 
 ## One-time setup
 
-The script needs to know which bucket to write to and how to authenticate. Provide
-these via the environment or a `.env` in this skill folder (copy `example.env` to
-`.env` — it's gitignored):
+The script needs to know which bucket to write to and how to authenticate. Config
+lives in a shared, user-owned file — **not** in this skill folder, so it survives
+reinstalls and updates:
 
-- `R2_SCREENSHOTS_BUCKET` — the R2 bucket name (required).
-- `R2_SCREENSHOTS_PUBLIC_BASE` — the bucket's public base URL, e.g.
-  `https://media.example.com` (required).
-- `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` — an API token with R2
-  read/write and the account ID. Alternatively, `wrangler login` to that account
-  and the token vars become optional.
+```
+~/.config/buildinternet/config        # or $XDG_CONFIG_HOME/buildinternet/config
+```
+
+Copy the keys from `config.example` into that file and fill them in. Other
+buildinternet skills share the same file; each reads only its own prefixed keys.
+
+Keys (all required unless noted):
+
+- `GH_SCREENSHOTS_BUCKET` — the R2 bucket name.
+- `GH_SCREENSHOTS_PUBLIC_BASE` — the bucket's public base URL, e.g.
+  `https://media.example.com`.
+- `GH_SCREENSHOTS_CLOUDFLARE_API_TOKEN` + `GH_SCREENSHOTS_CLOUDFLARE_ACCOUNT_ID` —
+  an API token with R2 read/write and the account ID. Optional if you instead
+  `wrangler login` to that account. These are namespaced so the skill never
+  picks up an unrelated ambient `CLOUDFLARE_API_TOKEN`.
+
+Config resolves per key, first match wins: the environment (any exported
+`GH_SCREENSHOTS_*` wins) → `--env-file <path>` → `$BUILDINTERNET_CONFIG` →
+`~/.config/buildinternet/config`. For a one-off run against a different bucket,
+just export the var or pass `--env-file`.
 
 Requires the [`wrangler`](https://developers.cloudflare.com/workers/wrangler/) CLI
 and a bucket with a [public custom domain](https://developers.cloudflare.com/r2/buckets/public-buckets/).
@@ -127,9 +142,9 @@ Example:
 It prints the public URL and a markdown snippet. The underlying command is just:
 
 ```bash
-wrangler r2 object put "$R2_SCREENSHOTS_BUCKET/<key>" --file <local-file> \
+wrangler r2 object put "$GH_SCREENSHOTS_BUCKET/<key>" --file <local-file> \
   --content-type image/png --remote
-# → $R2_SCREENSHOTS_PUBLIC_BASE/<key>
+# → $GH_SCREENSHOTS_PUBLIC_BASE/<key>
 ```
 
 **Key naming:** keep uploads namespaced so they don't collide and stay
@@ -172,7 +187,7 @@ HEREDOCs for `gh ... --body-file`):
   anything with secrets, tokens, internal dashboards with sensitive data, or customer
   PII visible in the shot. Crop/redact first.
 - To remove one later:
-  `wrangler r2 object delete "$R2_SCREENSHOTS_BUCKET/<key>" --remote`. Note the public
+  `wrangler r2 object delete "$GH_SCREENSHOTS_BUCKET/<key>" --remote`. Note the public
   URL is CDN-cached (commonly a few hours `max-age`), so it may keep serving a deleted
   object from the edge until the cache expires — the object itself is gone from R2
   immediately.

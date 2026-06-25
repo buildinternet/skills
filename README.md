@@ -25,7 +25,7 @@ This detects your agent(s) and installs the skills into the right directory. Pas
 
 Per-skill setup and usage live in each skill's `SKILL.md`. The `github-screenshots`
 skill needs a Cloudflare R2 bucket + `wrangler`; see its
-[`example.env`](./skills/github-screenshots/example.env).
+[`config.example`](./skills/github-screenshots/config.example).
 
 ## License
 
