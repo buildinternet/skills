@@ -135,6 +135,18 @@ check "buildinternet-config exits 0" "$rc" "0"
 contains "buildinternet-config used for bucket" "$(cat "$WRANGLER_LOG")" "bibucket/k/z.png"
 contains "buildinternet-config used for public base" "$(cat "$SANDBOX/stdout")" "https://bi.example.com/k/z.png"
 
+# --- Case 9: inline `# comment` stripped on unquoted values; `#` preserved
+#     inside a quoted value (so URL fragments survive). Uses --env-file so it is
+#     independent of any prior case's config. ---
+cat > "$SANDBOX/comment.config" <<'CFG'
+GH_SCREENSHOTS_BUCKET=cleanbucket   # prod bucket — note the inline comment
+GH_SCREENSHOTS_PUBLIC_BASE="https://media.example.com/#cdn"   # quoted, # is part of the value
+CFG
+run_upload -- "$SANDBOX/shot.png" --env-file "$SANDBOX/comment.config" --key k/z.png ; rc=$?
+check "inline-comment exits 0" "$rc" "0"
+contains "inline comment stripped from unquoted bucket" "$(cat "$WRANGLER_LOG")" "cleanbucket/k/z.png"
+contains "hash inside quoted value preserved" "$(cat "$SANDBOX/stdout")" "https://media.example.com/#cdn/k/z.png"
+
 echo
 echo "PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

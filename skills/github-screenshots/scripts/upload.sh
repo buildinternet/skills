@@ -24,7 +24,19 @@ load_env_softly() {
   for k in $KNOWN_KEYS; do
     if [ -n "${!k:-}" ]; then continue; fi   # environment already set it — don't override
     v="$(grep -E "^[[:space:]]*(export[[:space:]]+)?${k}=" "$f" 2>/dev/null | tail -1 | sed -E "s/^[[:space:]]*(export[[:space:]]+)?${k}=//" || true)"
-    v="${v%\"}"; v="${v#\"}"; v="${v%\'}"; v="${v#\'}"   # strip optional surrounding quotes
+    # Strip surrounding quotes and any inline comment. For a quoted value, the
+    # value is exactly what sits between the first pair of quotes — anything after
+    # the closing quote (e.g. a trailing ` # comment`) is dropped, while a `#`
+    # inside the quotes is preserved. For an unquoted value, a `#` that follows
+    # whitespace begins an inline comment; a `#` with no leading space (e.g. a URL
+    # fragment) stays part of the value.
+    case "$v" in
+      '"'*'"'*) v="${v#\"}"; v="${v%%\"*}" ;;          # "double quoted"
+      "'"*"'"*) v="${v#\'}"; v="${v%%\'*}" ;;          # 'single quoted'
+      *)
+        v="${v%%[[:space:]]#*}"                        # drop a whitespace-led inline comment
+        v="${v%"${v##*[![:space:]]}"}" ;;              # trim resulting trailing whitespace
+    esac
     if [ -n "$v" ]; then export "$k=$v"; fi
   done
 }
