@@ -45,9 +45,20 @@ Keys (all required unless noted):
 - `GH_SCREENSHOTS_PUBLIC_BASE` — the bucket's public base URL, e.g.
   `https://media.example.com`.
 - `GH_SCREENSHOTS_CLOUDFLARE_API_TOKEN` + `GH_SCREENSHOTS_CLOUDFLARE_ACCOUNT_ID` —
-  an API token with R2 read/write and the account ID. Optional if you instead
+  a Cloudflare R2 API token and the account ID. Optional if you instead
   `wrangler login` to that account. These are namespaced so the skill never
   picks up an unrelated ambient `CLOUDFLARE_API_TOKEN`.
+
+  **Token type matters.** This skill uploads via `wrangler r2 object put`, which
+  uses Cloudflare's REST API. That API only accepts an **Admin Read & Write** R2
+  token — the bucket-scoped **Object Read & Write** token type is rejected with
+  `403 {"code":10000,"message":"Authentication error"}` (it works only against
+  the S3-compatible API, which this skill does not use). Create the token from
+  **R2 → Manage API Tokens → Admin Read & Write**. Note this grants account-wide
+  R2 access, not just the target bucket; if you need to scope a token to one
+  bucket, use `wrangler login` for now. See
+  [R2 token types](https://developers.cloudflare.com/r2/api/tokens/) and the
+  [REST-API token caveat](https://developers.cloudflare.com/r2/platform/troubleshooting/).
 
 Config resolves per key, first match wins: the environment (any exported
 `GH_SCREENSHOTS_*` wins) → `--env-file <path>` → `$BUILDINTERNET_CONFIG` →
