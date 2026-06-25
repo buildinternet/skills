@@ -32,9 +32,9 @@ it is removed outright.
    overrides.
 2. **`--env-file <path>`** — explicit file path passed on the command line
    (overrides the default config location). Handy for testing and power users.
-3. **`$GH_SCREENSHOTS_CONFIG`** — env var holding an explicit config file path,
-   if set.
-4. **XDG config file** — `${XDG_CONFIG_HOME:-$HOME/.config}/github-screenshots/config`,
+3. **`$BUILDINTERNET_CONFIG`** — env var holding an explicit shared config file
+   path, if set. Shared across all buildinternet skills, not skill-specific.
+4. **XDG config file** — `${XDG_CONFIG_HOME:-$HOME/.config}/buildinternet/config`,
    the default home for the file.
 5. **`wrangler login`** — for Cloudflare auth only, if no token is found by the
    steps above. (`wrangler`'s own auth resolution, untouched.)
@@ -42,6 +42,16 @@ it is removed outright.
 The resolver keeps the existing per-key "environment already set wins" behavior
 (the current `load_env_softly` logic) — it just points at the new file
 location(s) instead of the skill-local `.env`.
+
+### Shared `buildinternet` config location
+
+The config file lives under a repo-wide `buildinternet` namespace
+(`~/.config/buildinternet/config`) rather than a per-skill folder, so future
+skills in this repo reuse the same file. Collision is avoided because every
+key is already prefixed per skill (`GH_SCREENSHOTS_*` here; a future skill uses
+its own prefix). A user sets up one file once and each skill reads only the keys
+it owns. The `$BUILDINTERNET_CONFIG` override and the XDG default are both
+shared, not skill-scoped.
 
 ### Config keys (unified `GH_SCREENSHOTS_*` prefix)
 
@@ -88,7 +98,7 @@ path to create and the keys to put in it, so setup is copy-paste:
 
 ```
 error: GH_SCREENSHOTS_BUCKET and GH_SCREENSHOTS_PUBLIC_BASE are not set.
-       Create ~/.config/github-screenshots/config with:
+       Create ~/.config/buildinternet/config with:
          GH_SCREENSHOTS_BUCKET=your-bucket
          GH_SCREENSHOTS_PUBLIC_BASE=https://media.example.com
        (optional) GH_SCREENSHOTS_CLOUDFLARE_API_TOKEN / _ACCOUNT_ID, or run 'wrangler login'.
@@ -100,8 +110,8 @@ error: GH_SCREENSHOTS_BUCKET and GH_SCREENSHOTS_PUBLIC_BASE are not set.
 
 - **`scripts/upload.sh`**
   - Remove `SKILL_ENV="${SKILL_DIR}/.env"` and the skill-local lookup.
-  - Implement the resolution order above (env → `--env-file` → `$GH_SCREENSHOTS_CONFIG`
-    → XDG `config` file). Reuse the per-key soft-load logic.
+  - Implement the resolution order above (env → `--env-file` → `$BUILDINTERNET_CONFIG`
+    → XDG `~/.config/buildinternet/config`). Reuse the per-key soft-load logic.
   - Add a `--env-file <path>` flag.
   - Rename all internal references to the new `GH_SCREENSHOTS_*` keys.
   - Map `GH_SCREENSHOTS_CLOUDFLARE_*` → `CLOUDFLARE_*` scoped to the wrangler
@@ -112,7 +122,7 @@ error: GH_SCREENSHOTS_BUCKET and GH_SCREENSHOTS_PUBLIC_BASE are not set.
   passthrough still works unchanged (it shells out to `upload.sh`).
 - **`example.env`** — delete it; replace with a `config.example` template in the
   skill folder (same KEY=VALUE format, new key names) that documents what to copy
-  into `~/.config/github-screenshots/config`.
+  into `~/.config/buildinternet/config`.
 - **`.gitignore`** (skill-local) — delete it. Its only purpose was to ignore the
   skill-local `.env` while keeping `example.env`; with no sensitive file living
   in the skill folder anymore, it has nothing to do.
@@ -130,13 +140,13 @@ error: GH_SCREENSHOTS_BUCKET and GH_SCREENSHOTS_PUBLIC_BASE are not set.
 
 ## Acceptance criteria
 
-- With config only in `~/.config/github-screenshots/config`, `upload.sh`
+- With config only in `~/.config/buildinternet/config`, `upload.sh`
   resolves the bucket, public base, and (if present) credentials, and uploads
   successfully.
 - Re-installing / re-cloning the skill does not disturb the config (it lives
   outside the skill folder).
 - Exported `GH_SCREENSHOTS_*` env vars override the config file per key.
-- `--env-file <path>` and `$GH_SCREENSHOTS_CONFIG` are honored.
+- `--env-file <path>` and `$BUILDINTERNET_CONFIG` are honored.
 - The skill never reads ambient `CLOUDFLARE_*`; with no namespaced token set,
   `wrangler login` still authenticates uploads.
 - Running `upload.sh` with no config prints the copy-paste first-run hint with
