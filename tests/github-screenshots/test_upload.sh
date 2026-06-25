@@ -78,9 +78,11 @@ check "env-override exits 0" "$rc" "0"
 contains "env overrides file public base" "$(cat "$SANDBOX/stdout")" "https://cdn.override.test/screenshots/x/y.png"
 
 # --- Case 4: --env-file beats the XDG default ---
-# The XDG config from Case 2 (mybucket / media.example.com) is still in place and
-# intentionally differs from alt.config, so seeing altbucket/alt.example.com proves
-# --env-file won over the XDG default rather than just happening to match it.
+# CROSS-CASE DEPENDENCY: the XDG config from Case 2 (mybucket / media.example.com)
+# is still on disk and intentionally differs from alt.config. Seeing
+# altbucket/alt.example.com proves --env-file genuinely won over the XDG default
+# rather than just happening to match it — these assertions would fail if
+# --env-file were ignored. Do not reorder this before Case 2.
 cat > "$SANDBOX/alt.config" <<'CFG'
 GH_SCREENSHOTS_BUCKET=altbucket
 GH_SCREENSHOTS_PUBLIC_BASE=https://alt.example.com
@@ -91,6 +93,9 @@ contains "env-file used for bucket" "$(cat "$WRANGLER_LOG")" "altbucket/k/z.png"
 contains "env-file used for public base" "$(cat "$SANDBOX/stdout")" "https://alt.example.com/k/z.png"
 
 # --- Case 5: namespaced token is mapped to CLOUDFLARE_* and beats ambient ---
+# CROSS-CASE DEPENDENCY: BUCKET/PUBLIC_BASE are supplied by the Case 2 XDG config
+# still on disk (this case sets only credentials), so the upload reaches wrangler.
+# Do not reorder this before Case 2.
 run_upload \
   CLOUDFLARE_API_TOKEN=DECOY \
   GH_SCREENSHOTS_CLOUDFLARE_API_TOKEN=REALTOKEN \
@@ -101,6 +106,9 @@ contains "namespaced token mapped to CLOUDFLARE_API_TOKEN" "$(cat "$WRANGLER_LOG
 contains "namespaced account mapped" "$(cat "$WRANGLER_LOG")" "CLOUDFLARE_ACCOUNT_ID=ACCT123"
 
 # --- Case 6: no namespaced token → fall through (wrangler keeps its own auth) ---
+# CROSS-CASE DEPENDENCY: like Case 5, BUCKET/PUBLIC_BASE come from the Case 2 XDG
+# config still on disk (this case sets only an ambient token). Note Case 7 below
+# removes that XDG file, so this must stay ahead of Case 7. Do not reorder.
 run_upload CLOUDFLARE_API_TOKEN=AMBIENT -- "$SANDBOX/shot.png" --key k/z.png ; rc=$?
 check "fallthrough exits 0" "$rc" "0"
 contains "fallthrough notes wrangler auth" "$(cat "$SANDBOX/stderr")" "relying on wrangler's own auth"
