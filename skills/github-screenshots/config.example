@@ -21,15 +21,22 @@
 GH_SCREENSHOTS_BUCKET=
 GH_SCREENSHOTS_PUBLIC_BASE=
 
-# --- Credentials (optional; or use `wrangler login`) ------------------------
-# A Cloudflare R2 API token, plus the account ID. Namespaced so the skill never
-# picks up an unrelated ambient CLOUDFLARE_API_TOKEN.
+# --- Credentials (pick one path) --------------------------------------------
 #
-# TOKEN TYPE MATTERS: uploads go through `wrangler r2 object put` (Cloudflare's
-# REST API), which only accepts an "Admin Read & Write" R2 token. A bucket-scoped
-# "Object Read & Write" token is rejected with 403 {"code":10000} — it works only
-# against the S3-compatible API, which this skill does not use. Create the token
-# at R2 > Manage API Tokens > Admin Read & Write (grants account-wide R2 access).
-# To scope access to a single bucket, use `wrangler login` instead for now.
-GH_SCREENSHOTS_CLOUDFLARE_API_TOKEN=
+# RECOMMENDED — bucket-scoped S3 credentials (least privilege):
+# Create an R2 API token at R2 > Manage API Tokens > Object Read & Write, scoped
+# to this bucket. The skill uploads via the S3-compatible API and accepts the
+# token's Access Key ID + Secret Access Key. Also set the account ID so the
+# endpoint can be derived (https://<account-id>.r2.cloudflarestorage.com), or
+# set GH_SCREENSHOTS_R2_ENDPOINT explicitly.
+GH_SCREENSHOTS_R2_ACCESS_KEY_ID=
+GH_SCREENSHOTS_R2_SECRET_ACCESS_KEY=
 GH_SCREENSHOTS_CLOUDFLARE_ACCOUNT_ID=
+# GH_SCREENSHOTS_R2_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
+#
+# FALLBACK — wrangler / REST API (account-wide Admin token or `wrangler login`):
+# Uploads via `wrangler r2 object put`, which uses Cloudflare's REST API. That
+# API only accepts an "Admin Read & Write" R2 token — bucket-scoped Object Read
+# & Write tokens are rejected with 403 {"code":10000}. Create the token at
+# R2 > Manage API Tokens > Admin Read & Write (grants account-wide R2 access).
+GH_SCREENSHOTS_CLOUDFLARE_API_TOKEN=

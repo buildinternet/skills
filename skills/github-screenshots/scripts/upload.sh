@@ -12,7 +12,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 #   3. $BUILDINTERNET_CONFIG        (shared override path)
 #   4. ~/.config/buildinternet/config   (XDG default, shared across buildinternet skills)
 # Credentials may instead come from `wrangler login`.
-KNOWN_KEYS="GH_SCREENSHOTS_BUCKET GH_SCREENSHOTS_PUBLIC_BASE GH_SCREENSHOTS_CLOUDFLARE_API_TOKEN GH_SCREENSHOTS_CLOUDFLARE_ACCOUNT_ID"
+KNOWN_KEYS="GH_SCREENSHOTS_BUCKET GH_SCREENSHOTS_PUBLIC_BASE GH_SCREENSHOTS_CLOUDFLARE_API_TOKEN GH_SCREENSHOTS_CLOUDFLARE_ACCOUNT_ID GH_SCREENSHOTS_R2_ACCESS_KEY_ID GH_SCREENSHOTS_R2_SECRET_ACCESS_KEY GH_SCREENSHOTS_R2_ENDPOINT"
 
 default_config_path() {
   printf '%s/buildinternet/config' "${XDG_CONFIG_HOME:-$HOME/.config}"
@@ -53,6 +53,42 @@ run_wrangler() {
   else
     wrangler "$@"
   fi
+}
+
+has_s3_creds() {
+  [ -n "${GH_SCREENSHOTS_R2_ACCESS_KEY_ID:-}" ] && [ -n "${GH_SCREENSHOTS_R2_SECRET_ACCESS_KEY:-}" ]
+}
+
+r2_s3_endpoint() {
+  if [ -n "${GH_SCREENSHOTS_R2_ENDPOINT:-}" ]; then
+    printf '%s' "${GH_SCREENSHOTS_R2_ENDPOINT%/}"
+    return 0
+  fi
+  if [ -n "${GH_SCREENSHOTS_CLOUDFLARE_ACCOUNT_ID:-}" ]; then
+    printf 'https://%s.r2.cloudflarestorage.com' "$GH_SCREENSHOTS_CLOUDFLARE_ACCOUNT_ID"
+    return 0
+  fi
+  return 1
+}
+
+run_s3_upload() {
+  local endpoint
+  endpoint="$(r2_s3_endpoint)" || {
+    echo "error: S3 credentials are set but no R2 endpoint is configured." >&2
+    echo "       Set GH_SCREENSHOTS_CLOUDFLARE_ACCOUNT_ID (endpoint is derived as" >&2
+    echo "       https://<account-id>.r2.cloudflarestorage.com) or set" >&2
+    echo "       GH_SCREENSHOTS_R2_ENDPOINT explicitly." >&2
+    exit 1
+  }
+  local s3_script="${GH_SCREENSHOTS_S3_UPLOADER:-$SCRIPT_DIR/put-r2-s3.mjs}"
+  node "$s3_script" \
+    --endpoint "$endpoint" \
+    --bucket "$BUCKET" \
+    --key "$KEY" \
+    --file "$FILE" \
+    --content-type "$CT" \
+    --access-key-id "$GH_SCREENSHOTS_R2_ACCESS_KEY_ID" \
+    --secret-access-key "$GH_SCREENSHOTS_R2_SECRET_ACCESS_KEY"
 }
 
 usage() {
@@ -123,16 +159,20 @@ if [ -z "$BUCKET" ] || [ -z "$PUBLIC_BASE" ]; then
     echo "       Create $CONFIG_FILE with:"
     echo "         GH_SCREENSHOTS_BUCKET=your-bucket"
     echo "         GH_SCREENSHOTS_PUBLIC_BASE=https://media.example.com"
-    echo "       (optional) GH_SCREENSHOTS_CLOUDFLARE_API_TOKEN / _ACCOUNT_ID, or run 'wrangler login'."
+    echo "       (recommended) GH_SCREENSHOTS_R2_ACCESS_KEY_ID / _R2_SECRET_ACCESS_KEY + _CLOUDFLARE_ACCOUNT_ID"
+    echo "       (fallback) GH_SCREENSHOTS_CLOUDFLARE_API_TOKEN / _ACCOUNT_ID, or run 'wrangler login'."
     echo "       Override the path with --env-file <path> or \$BUILDINTERNET_CONFIG."
   } >&2
   exit 1
 fi
-# Credentials are a soft check: if no namespaced token is present we let wrangler
-# use its own auth (e.g. 'wrangler login'). Only nudge if nothing is configured.
-if [ -z "${GH_SCREENSHOTS_CLOUDFLARE_API_TOKEN:-}" ]; then
+# Credentials are a soft check for the wrangler path only. When S3 creds are set
+# we prefer that narrower-scope upload path and skip wrangler auth nudges.
+if has_s3_creds; then
+  :
+elif [ -z "${GH_SCREENSHOTS_CLOUDFLARE_API_TOKEN:-}" ]; then
   echo "note: GH_SCREENSHOTS_CLOUDFLARE_API_TOKEN not set — relying on wrangler's own auth." >&2
-  echo "      If the upload fails, set GH_SCREENSHOTS_CLOUDFLARE_API_TOKEN + GH_SCREENSHOTS_CLOUDFLARE_ACCOUNT_ID" >&2
+  echo "      For least-privilege uploads, set GH_SCREENSHOTS_R2_ACCESS_KEY_ID + GH_SCREENSHOTS_R2_SECRET_ACCESS_KEY" >&2
+  echo "      (bucket-scoped Object Read & Write token). Otherwise set GH_SCREENSHOTS_CLOUDFLARE_API_TOKEN + GH_SCREENSHOTS_CLOUDFLARE_ACCOUNT_ID" >&2
   echo "      (in $CONFIG_FILE) or run 'wrangler login'." >&2
 fi
 
@@ -174,7 +214,13 @@ URL="${PUBLIC_BASE}/${KEY}"
 
 echo ">> uploading $FILE  ($CT)" >&2
 echo ">> key: $KEY" >&2
-run_wrangler r2 object put "${BUCKET}/${KEY}" --file "$FILE" --content-type "$CT" --remote >&2
+if has_s3_creds; then
+  echo ">> via: R2 S3-compatible API (bucket-scoped credentials)" >&2
+  run_s3_upload >&2
+else
+  echo ">> via: wrangler r2 object put (REST API)" >&2
+  run_wrangler r2 object put "${BUCKET}/${KEY}" --file "$FILE" --content-type "$CT" --remote >&2
+fi
 
 # --- emit results ---
 [ -n "$ALT" ] || ALT="$(basename "$FILE")"

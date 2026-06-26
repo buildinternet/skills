@@ -24,7 +24,8 @@ This detects your agent(s) and installs the skills into the right directory. Pas
 | [`github-screenshots`](./skills/github-screenshots) | Host an image on a Cloudflare R2 bucket and embed it in a GitHub PR or issue (agents can't drag-and-drop into the GitHub uploader). |
 
 Per-skill setup and usage live in each skill's `SKILL.md`. The `github-screenshots`
-skill needs a Cloudflare R2 bucket + `wrangler`; see its
+skill needs a Cloudflare R2 bucket (S3 credentials recommended; `wrangler` optional
+fallback); see its
 [`config.example`](./skills/github-screenshots/config.example).
 
 ## License

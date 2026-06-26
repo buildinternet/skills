@@ -44,29 +44,38 @@ Keys (all required unless noted):
 - `GH_SCREENSHOTS_BUCKET` — the R2 bucket name.
 - `GH_SCREENSHOTS_PUBLIC_BASE` — the bucket's public base URL, e.g.
   `https://media.example.com`.
-- `GH_SCREENSHOTS_CLOUDFLARE_API_TOKEN` + `GH_SCREENSHOTS_CLOUDFLARE_ACCOUNT_ID` —
-  a Cloudflare R2 API token and the account ID. Optional if you instead
-  `wrangler login` to that account. These are namespaced so the skill never
-  picks up an unrelated ambient `CLOUDFLARE_API_TOKEN`.
 
-  **Token type matters.** This skill uploads via `wrangler r2 object put`, which
-  uses Cloudflare's REST API. That API only accepts an **Admin Read & Write** R2
-  token — the bucket-scoped **Object Read & Write** token type is rejected with
-  `403 {"code":10000,"message":"Authentication error"}` (it works only against
-  the S3-compatible API, which this skill does not use). Create the token from
-  **R2 → Manage API Tokens → Admin Read & Write**. Note this grants account-wide
-  R2 access, not just the target bucket; if you need to scope a token to one
-  bucket, use `wrangler login` for now. See
+**Credentials — pick one path** (S3 is recommended for least privilege):
+
+- **Recommended — bucket-scoped S3 credentials:** `GH_SCREENSHOTS_R2_ACCESS_KEY_ID`
+  + `GH_SCREENSHOTS_R2_SECRET_ACCESS_KEY`, plus `GH_SCREENSHOTS_CLOUDFLARE_ACCOUNT_ID`
+  (used to derive the S3 endpoint
+  `https://<account-id>.r2.cloudflarestorage.com`) or an explicit
+  `GH_SCREENSHOTS_R2_ENDPOINT`. Create an **Object Read & Write** token from
+  **R2 → Manage API Tokens**, scoped to this bucket. The skill uploads via the
+  S3-compatible API, which accepts these narrower-scope credentials.
+
+- **Fallback — wrangler / REST API:** `GH_SCREENSHOTS_CLOUDFLARE_API_TOKEN` +
+  `GH_SCREENSHOTS_CLOUDFLARE_ACCOUNT_ID`, or `wrangler login` instead. Uploads
+  go through `wrangler r2 object put`, which uses Cloudflare's REST API. That
+  API only accepts an **Admin Read & Write** R2 token — bucket-scoped Object Read
+  & Write tokens are rejected with
+  `403 {"code":10000,"message":"Authentication error"}`. Admin tokens grant
+  account-wide R2 access. See
   [R2 token types](https://developers.cloudflare.com/r2/api/tokens/) and the
   [REST-API token caveat](https://developers.cloudflare.com/r2/platform/troubleshooting/).
+
+When both S3 and wrangler credentials are set, the S3 path wins.
 
 Config resolves per key, first match wins: the environment (any exported
 `GH_SCREENSHOTS_*` wins) → `--env-file <path>` → `$BUILDINTERNET_CONFIG` →
 `~/.config/buildinternet/config`. For a one-off run against a different bucket,
 just export the var or pass `--env-file`.
 
-Requires the [`wrangler`](https://developers.cloudflare.com/workers/wrangler/) CLI
-and a bucket with a [public custom domain](https://developers.cloudflare.com/r2/buckets/public-buckets/).
+Requires Node.js (for S3 uploads) and a bucket with a
+[public custom domain](https://developers.cloudflare.com/r2/buckets/public-buckets/).
+The wrangler fallback also needs the
+[`wrangler`](https://developers.cloudflare.com/workers/wrangler/) CLI.
 
 ## The three steps
 
@@ -150,9 +159,18 @@ Example:
   --repo myorg/myapp --ref 1722 --alt "New live feed cards" --width 700
 ```
 
-It prints the public URL and a markdown snippet. The underlying command is just:
+It prints the public URL and a markdown snippet. Under the hood it uploads via
+the S3-compatible API when bucket-scoped credentials are configured, otherwise
+via `wrangler r2 object put`:
 
 ```bash
+# Preferred (bucket-scoped Object Read & Write token):
+node put-r2-s3.mjs --endpoint "https://<account-id>.r2.cloudflarestorage.com" \
+  --bucket "$GH_SCREENSHOTS_BUCKET" --key "<key>" --file <local-file> \
+  --content-type image/png --access-key-id ... --secret-access-key ...
+# → $GH_SCREENSHOTS_PUBLIC_BASE/<key>
+
+# Fallback (Admin token or wrangler login):
 wrangler r2 object put "$GH_SCREENSHOTS_BUCKET/<key>" --file <local-file> \
   --content-type image/png --remote
 # → $GH_SCREENSHOTS_PUBLIC_BASE/<key>
