@@ -44,8 +44,12 @@ run_upload() {
   [ "$1" = "--" ] || { echo "run_upload: missing -- separator" >&2; return 2; }
   shift
   rm -f "$WRANGLER_LOG"
+  local node_dir=""
+  if command -v node >/dev/null 2>&1; then
+    node_dir="$(dirname "$(command -v node)")"
+  fi
   env -i \
-    PATH="$SANDBOX/bin:/usr/bin:/bin" \
+    PATH="$SANDBOX/bin${node_dir:+:$node_dir}:/usr/bin:/bin" \
     HOME="$SANDBOX/home" \
     XDG_CONFIG_HOME="$SANDBOX/xdg" \
     "${envassigns[@]}" \
@@ -146,6 +150,64 @@ run_upload -- "$SANDBOX/shot.png" --env-file "$SANDBOX/comment.config" --key k/z
 check "inline-comment exits 0" "$rc" "0"
 contains "inline comment stripped from unquoted bucket" "$(cat "$WRANGLER_LOG")" "cleanbucket/k/z.png"
 contains "hash inside quoted value preserved" "$(cat "$SANDBOX/stdout")" "https://media.example.com/#cdn/k/z.png"
+
+# --- Case 10: S3 creds prefer the S3 path over wrangler ---
+# CROSS-CASE DEPENDENCY: Case 7 removed the XDG config; restore it here so
+# bucket/public base are available without passing --env-file.
+mkdir -p "$SANDBOX/xdg/buildinternet"
+cat > "$SANDBOX/xdg/buildinternet/config" <<'CFG'
+GH_SCREENSHOTS_BUCKET=mybucket
+GH_SCREENSHOTS_PUBLIC_BASE=https://media.example.com
+CFG
+cat > "$SANDBOX/fake-put-r2-s3.mjs" <<'FAKE'
+#!/usr/bin/env node
+import fs from 'node:fs';
+const log = process.env.S3_LOG;
+const args = process.argv.slice(2).join(' ');
+fs.appendFileSync(log, `S3_ARGS: ${args}\n`);
+process.exit(0);
+FAKE
+chmod +x "$SANDBOX/fake-put-r2-s3.mjs"
+S3_LOG="$SANDBOX/s3.log"
+run_upload \
+  S3_LOG="$S3_LOG" \
+  GH_SCREENSHOTS_S3_UPLOADER="$SANDBOX/fake-put-r2-s3.mjs" \
+  GH_SCREENSHOTS_R2_ACCESS_KEY_ID=AKIA123 \
+  GH_SCREENSHOTS_R2_SECRET_ACCESS_KEY=SECRET456 \
+  GH_SCREENSHOTS_CLOUDFLARE_ACCOUNT_ID=acct999 \
+  -- "$SANDBOX/shot.png" --key screenshots/x/y.png ; rc=$?
+check "s3-creds exits 0" "$rc" "0"
+contains "s3 path prints public URL" "$(cat "$SANDBOX/stdout")" "https://media.example.com/screenshots/x/y.png"
+contains "s3 path calls put-r2-s3 with bucket/key" "$(cat "$S3_LOG")" "--bucket mybucket --key screenshots/x/y.png"
+contains "s3 path uses derived endpoint" "$(cat "$S3_LOG")" "--endpoint https://acct999.r2.cloudflarestorage.com"
+[ -f "$WRANGLER_LOG" ] && bad "s3-creds must not call wrangler" || ok "s3-creds does not call wrangler"
+
+# --- Case 11: explicit R2 endpoint overrides account-id derivation ---
+rm -f "$S3_LOG"
+run_upload \
+  S3_LOG="$S3_LOG" \
+  GH_SCREENSHOTS_S3_UPLOADER="$SANDBOX/fake-put-r2-s3.mjs" \
+  GH_SCREENSHOTS_R2_ACCESS_KEY_ID=AKIA123 \
+  GH_SCREENSHOTS_R2_SECRET_ACCESS_KEY=SECRET456 \
+  GH_SCREENSHOTS_R2_ENDPOINT=https://custom.r2.example/ \
+  -- "$SANDBOX/shot.png" --key k/z.png ; rc=$?
+check "s3-endpoint-override exits 0" "$rc" "0"
+contains "explicit endpoint used" "$(cat "$S3_LOG")" "--endpoint https://custom.r2.example"
+
+# --- Case 12: S3 creds without endpoint/account → clear error ---
+run_upload \
+  GH_SCREENSHOTS_R2_ACCESS_KEY_ID=AKIA123 \
+  GH_SCREENSHOTS_R2_SECRET_ACCESS_KEY=SECRET456 \
+  -- "$SANDBOX/shot.png" --key k/z.png ; rc=$?
+check "s3-missing-endpoint exits 1" "$rc" "1"
+contains "s3-missing-endpoint names account id" "$(cat "$SANDBOX/stderr")" "GH_SCREENSHOTS_CLOUDFLARE_ACCOUNT_ID"
+contains "s3-missing-endpoint names explicit endpoint" "$(cat "$SANDBOX/stderr")" "GH_SCREENSHOTS_R2_ENDPOINT"
+
+# --- Case 13: partial S3 creds fall through to wrangler ---
+run_upload GH_SCREENSHOTS_R2_ACCESS_KEY_ID=ONLYKEY -- \
+  "$SANDBOX/shot.png" --key k/z.png ; rc=$?
+check "partial-s3 falls through exits 0" "$rc" "0"
+contains "partial-s3 uses wrangler" "$(cat "$WRANGLER_LOG")" "mybucket/k/z.png"
 
 echo
 echo "PASS=$PASS FAIL=$FAIL"
