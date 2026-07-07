@@ -26,6 +26,29 @@ The fix: upload the image to a **Cloudflare R2 bucket you control** that serves
 publicly over a custom domain, then reference that `https://<your-domain>/<key>` URL
 in the markdown. No repo bloat, no browser, no session — and stable URLs.
 
+## Preferred path: uploads.sh CLI
+
+If the environment has `UPLOADS_TOKEN` set (or an `.env` with `UPLOADS_TOKEN`,
+e.g. `~/Code/uploads/.env`), skip the R2 setup below and use the
+`@buildinternet/uploads` CLI instead — it uploads via api.uploads.sh and
+handles PR/issue organization:
+
+    pnpm --dir ~/Code/uploads uploads put ./shot.png --pr 123 --env-file ~/Code/uploads/.env
+
+- `--pr <num>` / `--issue <num>` store the file under a **stable key**
+  (`gh/<owner>/<repo>/pull/<num>/<name>` — no content hash), so re-uploading a
+  file with the same name updates every place the URL is already embedded.
+  The command prints the URL and ready-to-paste markdown.
+- Add `--comment` to also create/update a managed "Attachments" comment on
+  the PR/issue through your local `gh` auth.
+- The repo is inferred from the current git remote; pass `--repo owner/name`
+  to override.
+- Because URLs are stable per filename, embed once and re-upload to refresh
+  the image — no need to edit the PR body again.
+
+Fall back to the direct-R2 flow below only when uploads.sh credentials are
+not available.
+
 ## One-time setup
 
 The script needs to know which bucket to write to and how to authenticate. Config
