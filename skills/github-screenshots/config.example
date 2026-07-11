@@ -1,21 +1,39 @@
 # github-screenshots configuration — REFERENCE ONLY.
 #
-# The skill does NOT read this file. Copy the keys below into your shared
-# buildinternet config file and fill in the values:
+# The skill does NOT read this file. Copy the keys you need into your shared
+# config file and fill in the values:
 #
 #   ~/.config/buildinternet/config        (or $XDG_CONFIG_HOME/buildinternet/config)
 #
-# Other buildinternet skills share that same file; each reads only its own
-# prefixed keys, so just append these lines to it.
+# Other tools may share that same file; each reads only its own prefixed keys.
 #
 # Resolution order (first match wins, per key):
-#   1. environment variables (GH_SCREENSHOTS_* already exported)
+#   1. environment variables (already exported)
 #   2. --env-file <path>
 #   3. $BUILDINTERNET_CONFIG
 #   4. ~/.config/buildinternet/config
-# Credentials may instead come from `wrangler login`.
 
-# --- Bucket (required) ------------------------------------------------------
+# =============================================================================
+# Preferred — uploads CLI (stable PR keys, optimize, managed comments)
+# =============================================================================
+# Install: npm install --global @buildinternet/uploads
+# Then:    uploads login
+# Or set a token here / in the environment. When UPLOADS_TOKEN is set and
+# `uploads` is on PATH, upload.sh uses the uploads backend automatically.
+#
+# UPLOADS_TOKEN=
+# UPLOADS_API_URL=https://api.uploads.sh
+# UPLOADS_WORKSPACE=          # optional; often inferred from the token
+
+# Optional skill knobs (apply to either backend where relevant):
+# GH_SCREENSHOTS_BACKEND=auto   # auto | uploads | r2
+# GH_SCREENSHOTS_DEFAULT_WIDTH=700
+
+# =============================================================================
+# Fallback — direct R2 (no uploads CLI)
+# =============================================================================
+
+# --- Bucket (required for R2 path) ------------------------------------------
 # The R2 bucket to upload into, and its public base URL (a custom domain bound
 # to the bucket). Set both so the printed URL matches where the object lands.
 GH_SCREENSHOTS_BUCKET=

@@ -21,12 +21,11 @@ This detects your agent(s) and installs the skills into the right directory. Pas
 
 | Skill | What it does |
 |---|---|
-| [`github-screenshots`](./skills/github-screenshots) | Host an image on a Cloudflare R2 bucket and embed it in a GitHub PR or issue (agents can't drag-and-drop into the GitHub uploader). |
+| [`github-screenshots`](./skills/github-screenshots) | Capture a webpage screenshot and host it for embedding in a GitHub PR or issue (agents can't drag-and-drop into the GitHub uploader). Prefers the [uploads CLI](https://www.npmjs.com/package/@buildinternet/uploads) when configured; falls back to direct R2. |
 
-Per-skill setup and usage live in each skill's `SKILL.md`. The `github-screenshots`
-skill needs a Cloudflare R2 bucket (S3 credentials recommended; `wrangler` optional
-fallback); see its
-[`config.example`](./skills/github-screenshots/config.example).
+Per-skill setup and usage live in each skill's `SKILL.md`. For
+`github-screenshots`, the preferred path is `uploads login`; direct R2 keys are
+documented in [`config.example`](./skills/github-screenshots/config.example).
 
 ## License
 

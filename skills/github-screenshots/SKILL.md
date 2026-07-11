@@ -1,93 +1,104 @@
 ---
 name: github-screenshots
 description: >-
-  Host an image on a Cloudflare R2 bucket you configure and embed it in a GitHub
-  pull request or issue. Use this whenever you want to put a screenshot, diagram,
-  before/after comparison, GIF, or any image into a PR description, issue body, or
-  PR/issue comment — including when the user says "include a screenshot", "show what
-  it looks like", "add a screenshot of the UI", "attach an image", or when you've
-  just built/changed something visual and a representative shot would make the PR
-  clearer. Reach for this instead of trying to drag-and-drop or use the GitHub API
-  for uploads (which an agent cannot do).
+  Capture a webpage screenshot (Playwright) and host it for embedding in a GitHub
+  pull request or issue. Use this when you need a visual of a live UI — screenshot
+  a URL, crop a selector, before/after of a running app — and put the image in a
+  PR description, issue body, or comment. Triggers include "screenshot this page",
+  "capture the UI", "before/after of the live site", "include a screenshot of …",
+  or when you've changed something visual and a representative shot would make the
+  PR clearer. Prefers the uploads CLI for hosting when configured; falls back to
+  direct R2. For hosting an already-saved local file without capture, use the
+  uploads CLI (`uploads put` / `uploads attach`) when available.
 ---
 
-# Embedding screenshots in GitHub PRs and issues
+# Capturing screenshots and embedding them in GitHub
 
 ## Why this skill exists
 
-GitHub's native image hosting — the `github.com/user-attachments/...` URLs you get
-from drag-and-dropping into the web editor — is only reachable through an
-authenticated **browser session**. There is no supported `gh` CLI or REST API
-endpoint for it; the web UI signs the upload with a session cookie, not a token.
-So when you write a PR/issue body with `gh ... --body-file`, any image URL must
-already point at something publicly hosted.
+GitHub's native image hosting (`github.com/user-attachments/…`) only works from an
+authenticated **browser session**. There is no `gh` CLI or REST API for it. Any
+image URL in a PR/issue body written with `gh … --body-file` must already point at
+something publicly hosted.
 
-The fix: upload the image to a **Cloudflare R2 bucket you control** that serves
-publicly over a custom domain, then reference that `https://<your-domain>/<key>` URL
-in the markdown. No repo bloat, no browser, no session — and stable URLs.
+This skill covers two steps agents need:
+
+1. **Capture** a reliable PNG of a live page (Playwright), with a known local path.
+2. **Host** that file (or any local image) and get a public URL + markdown snippet.
+
+Hosting prefers the **`uploads` CLI** when it is installed and a token is configured
+(stable PR keys, image optimize, managed attachment comments). If not, it falls back
+to a **Cloudflare R2 bucket you configure** (S3-compatible API or wrangler).
 
 ## One-time setup
 
-The script needs to know which bucket to write to and how to authenticate. Config
-lives in a shared, user-owned file — **not** in this skill folder, so it survives
-reinstalls and updates:
+### Preferred — uploads CLI
+
+```bash
+npm install --global @buildinternet/uploads
+uploads login          # short-lived enrollment code from an admin
+uploads doctor         # verify health + auth
+```
+
+Config is written to `~/.config/buildinternet/config` (or
+`$XDG_CONFIG_HOME/buildinternet/config`). You can also set `UPLOADS_TOKEN` /
+`UPLOADS_API_URL` / `UPLOADS_WORKSPACE` in the environment or via `--env-file`.
+
+When `uploads` is on `PATH` and `UPLOADS_TOKEN` resolves, `upload.sh` uses it
+automatically (`GH_SCREENSHOTS_BACKEND=auto`).
+
+### Fallback — direct R2
+
+If you are not using the uploads CLI, configure a public R2 bucket. Copy keys from
+`config.example` into the shared config file:
 
 ```
-~/.config/buildinternet/config        # or $XDG_CONFIG_HOME/buildinternet/config
+~/.config/buildinternet/config
 ```
 
-Copy the keys from `config.example` into that file and fill them in. Other
-buildinternet skills share the same file; each reads only its own prefixed keys.
+Required:
 
-Keys (all required unless noted):
+- `GH_SCREENSHOTS_BUCKET` — R2 bucket name
+- `GH_SCREENSHOTS_PUBLIC_BASE` — public base URL, e.g. `https://media.example.com`
 
-- `GH_SCREENSHOTS_BUCKET` — the R2 bucket name.
-- `GH_SCREENSHOTS_PUBLIC_BASE` — the bucket's public base URL, e.g.
-  `https://media.example.com`.
-
-**Credentials — pick one path** (S3 is recommended for least privilege):
+**Credentials — pick one path** (S3 recommended for least privilege):
 
 - **Recommended — bucket-scoped S3 credentials:** `GH_SCREENSHOTS_R2_ACCESS_KEY_ID`
   + `GH_SCREENSHOTS_R2_SECRET_ACCESS_KEY`, plus `GH_SCREENSHOTS_CLOUDFLARE_ACCOUNT_ID`
-  (used to derive the S3 endpoint
-  `https://<account-id>.r2.cloudflarestorage.com`) or an explicit
+  (derives `https://<account-id>.r2.cloudflarestorage.com`) or
   `GH_SCREENSHOTS_R2_ENDPOINT`. Create an **Object Read & Write** token from
-  **R2 → Manage API Tokens**, scoped to this bucket. The skill uploads via the
-  S3-compatible API, which accepts these narrower-scope credentials.
+  **R2 → Manage API Tokens**, scoped to this bucket.
 
 - **Fallback — wrangler / REST API:** `GH_SCREENSHOTS_CLOUDFLARE_API_TOKEN` +
-  `GH_SCREENSHOTS_CLOUDFLARE_ACCOUNT_ID`, or `wrangler login` instead. Uploads
-  go through `wrangler r2 object put`, which uses Cloudflare's REST API. That
-  API only accepts an **Admin Read & Write** R2 token — bucket-scoped Object Read
-  & Write tokens are rejected with
-  `403 {"code":10000,"message":"Authentication error"}`. Admin tokens grant
-  account-wide R2 access. See
-  [R2 token types](https://developers.cloudflare.com/r2/api/tokens/) and the
-  [REST-API token caveat](https://developers.cloudflare.com/r2/platform/troubleshooting/).
+  `GH_SCREENSHOTS_CLOUDFLARE_ACCOUNT_ID`, or `wrangler login`. Uses
+  `wrangler r2 object put` (needs an **Admin Read & Write** R2 token — bucket-scoped
+  tokens are rejected by the REST API).
 
 When both S3 and wrangler credentials are set, the S3 path wins.
 
-Config resolves per key, first match wins: the environment (any exported
-`GH_SCREENSHOTS_*` wins) → `--env-file <path>` → `$BUILDINTERNET_CONFIG` →
-`~/.config/buildinternet/config`. For a one-off run against a different bucket,
-just export the var or pass `--env-file`.
+Optional: `GH_SCREENSHOTS_DEFAULT_WIDTH` (e.g. `700`) so embeds get a width without
+passing `--width` every time. `GH_SCREENSHOTS_BACKEND=auto|uploads|r2` forces a
+backend (same as `--backend`).
 
-Requires Node.js (for S3 uploads) and a bucket with a
+Config resolution (per key, first match wins): environment → `--env-file` →
+`$BUILDINTERNET_CONFIG` → `~/.config/buildinternet/config`.
+
+Requires Node.js. The wrangler fallback also needs the
+[`wrangler`](https://developers.cloudflare.com/workers/wrangler/) CLI. The bucket
+needs a
 [public custom domain](https://developers.cloudflare.com/r2/buckets/public-buckets/).
-The wrangler fallback also needs the
-[`wrangler`](https://developers.cloudflare.com/workers/wrangler/) CLI.
 
 ## The three steps
 
-1. **Capture** the image to a local file.
-2. **Upload** it with the bundled script → get a public URL.
+1. **Capture** the image to a local file (or use an existing file).
+2. **Upload** it → get a public URL + markdown.
 3. **Embed** the URL in your PR/issue markdown with good alt text.
 
 ### 1. Capture
 
-Use the bundled `capture.sh` script for reliable headless Playwright (Chromium)
-captures. It writes a PNG to a known path and prints that path on stdout — no
-"where did the file go?" ambiguity.
+Use the bundled `capture.sh` for headless Playwright (Chromium). It writes a PNG
+and prints that path on stdout (or uploads and prints URL/markdown when
+`--upload` is set).
 
 ```bash
 <skill-dir>/scripts/capture.sh <url> [options]
@@ -97,26 +108,28 @@ captures. It writes a PNG to a known path and prints that path on stdout — no
 
 | Flag | Description |
 |---|---|
-| `--selector <css>` | Capture only that element (element crop). Default: full viewport. |
-| `--out <path>` | Output PNG path. Default: `/tmp/screenshot-<timestamp>.png` (path printed on stdout). |
+| `--selector <css>` | Capture only that element. Default: full viewport. |
+| `--out <path>` | Output PNG path. Default: `/tmp/screenshot-<timestamp>.png`. |
 | `--width <px>` / `--height <px>` | Viewport size (default 1280×720). |
-| `--full-page` | Capture the entire scrollable page, not just the viewport. |
-| `--wait <selector\|ms>` | Wait for a CSS selector to appear, or sleep N milliseconds, before capturing. |
-| `--eval <js>` | Run arbitrary JS in the page before capturing (e.g. populate form fields). |
-| `--upload` | After capturing, pipe straight into `upload.sh` — capture + upload in one command. |
-| `--repo`, `--ref`, `--alt`, `--img-width` | Forwarded to `upload.sh` when using `--upload`. |
+| `--full-page` | Entire scrollable page, not just the viewport. |
+| `--wait <selector\|ms>` | Wait for a selector, or sleep N ms, before capturing. |
+| `--eval <js>` | Run JS in the page before capturing. |
+| `--upload` | After capture, run `upload.sh` (see flags below). |
+| `--repo`, `--ref`, `--alt`, `--img-width` | Forwarded to `upload.sh`. |
+| `--pr`, `--issue`, `--comment` | Forwarded (stable keys + attachments comment; uploads backend). |
+| `--destination`, `--no-optimize`, `--frame`, `--frame-url` | Forwarded (uploads backend). |
+| `--format`, `--backend`, `--env-file` | Forwarded to `upload.sh`. |
 
-**One-liner capture + upload:**
+**Capture + upload one-liner (PR attachment):**
 
 ```bash
 ./scripts/capture.sh https://myapp.example.com \
   --selector ".card" --wait ".card" \
-  --upload --repo myorg/myapp --ref 42 --alt "New card design" --img-width 700
+  --upload --pr 42 --alt "New card design" --img-width 700
 ```
 
-**React controlled-input gotcha** — setting `.value` on a React input does
-nothing because React intercepts the native DOM property. Use the native value
-setter and dispatch synthetic events instead:
+**React controlled-input gotcha** — setting `.value` does nothing; use the native
+setter and synthetic events:
 
 ```js
 // Pass this to --eval:
@@ -127,29 +140,21 @@ el.dispatchEvent(new Event('input',  { bubbles: true }));
 el.dispatchEvent(new Event('change', { bubbles: true }));
 ```
 
-**Prerequisites:** Node.js + Playwright Chromium.  
-First-time setup:
+**Prerequisites:** Node.js + Playwright Chromium.
+
 ```bash
 npx playwright install chromium
 ```
+
 If the browser is missing, `capture.sh` exits with a clear install hint.
 
-**Other capture methods (alternatives):**
-
-- **Interactive browser tool** (e.g. Claude-in-Chrome): works, but the tool may
-  not surface the saved file path — prefer `capture.sh` when you need a known path.
-- **Terminal / CLI output:** capture a terminal screenshot separately.
-- Already have a file? Skip to step 2.
+**Other capture methods:** interactive browser tools, terminal screenshots, or any
+local file — skip to step 2 when you already have a path.
 
 ### 2. Upload
 
-Use the bundled script — it handles auth, content-type, key naming, and prints
-ready-to-paste markdown:
-
 ```bash
-<skill-dir>/scripts/upload.sh <local-file> \
-  [--repo <owner/repo>] [--ref <pr-number|issue|branch>] \
-  [--alt "description"] [--width <px>] [--key <explicit/key.png>]
+<skill-dir>/scripts/upload.sh <local-file> [options]
 ```
 
 Example:
@@ -159,45 +164,54 @@ Example:
   --repo myorg/myapp --ref 1722 --alt "New live feed cards" --width 700
 ```
 
-It prints the public URL and a markdown snippet. Under the hood it uploads via
-the S3-compatible API when bucket-scoped credentials are configured, otherwise
-via `wrangler r2 object put`:
+**Stable PR/issue keys** (uploads backend — re-upload overwrites, URL stays fixed):
 
 ```bash
-# Preferred (bucket-scoped Object Read & Write token):
-node put-r2-s3.mjs --endpoint "https://<account-id>.r2.cloudflarestorage.com" \
-  --bucket "$GH_SCREENSHOTS_BUCKET" --key "<key>" --file <local-file> \
-  --content-type image/png --access-key-id ... --secret-access-key ...
-# → $GH_SCREENSHOTS_PUBLIC_BASE/<key>
-
-# Fallback (Admin token or wrangler login):
-wrangler r2 object put "$GH_SCREENSHOTS_BUCKET/<key>" --file <local-file> \
-  --content-type image/png --remote
-# → $GH_SCREENSHOTS_PUBLIC_BASE/<key>
+./scripts/upload.sh ./after.png --pr 123 --alt "Dashboard after" --comment
 ```
 
-**Key naming:** keep uploads namespaced so they don't collide and stay
-discoverable. The script defaults to
-`screenshots/<repo-name>/<ref-or-date>/<basename>-<shorthash>.<ext>`. Override with
-`--key` only when you have a reason to.
+Human progress goes to stderr; URL and markdown (or other `--format`) to stdout.
+
+| Flag | Purpose |
+|---|---|
+| `--repo` / `--ref` | Auto key segments (default: git remote / today's date). |
+| `--alt` / `--width` | Markdown embed. |
+| `--key` | Explicit object key (skips auto-naming). |
+| `--pr` / `--issue` | Stable `gh/…` attachment keys (uploads backend). |
+| `--comment` | Create/update the managed attachments comment (needs `gh`). |
+| `--destination` | `screenshots` \| `gh` \| `f` (uploads backend). |
+| `--no-optimize` / `--frame` | Pass through to uploads CLI. |
+| `--format human\|url\|markdown\|json` | Stdout shape (default: `URL:` + `MARKDOWN:` lines). |
+| `--backend auto\|uploads\|r2` | Force a hosting path. |
+| `--env-file` | Config file override. |
+
+**Key naming (R2 / default uploads put):**  
+`screenshots/<repo-name>/<ref-or-date>/<basename>-<shorthash>.<ext>`.  
+With `--pr`/`--issue` (uploads): `gh/<owner>/<repo>/pull|issues/<num>/<name>` —
+no content hash, safe to hard-code in a PR body and re-upload later.
+
+**Backend cascade**
+
+1. `uploads` CLI when on `PATH` and `UPLOADS_TOKEN` is set (`auto` default).
+2. Else R2 via S3 credentials, or wrangler as last resort.
+
+Force with `--backend` or `GH_SCREENSHOTS_BACKEND`. Flags like `--pr` and
+`--comment` require the uploads backend; on pure R2 they error with a clear hint.
 
 ### 3. Embed in the PR/issue
 
-Write the markdown to a file and reference the hosted URLs (cleaner than inline
-HEREDOCs for `gh ... --body-file`):
+Write markdown to a file and use `gh … --body-file`:
 
 ```markdown
-![New live feed cards](https://media.example.com/screenshots/myapp/1722/live-feed-a1b2c3.png)
+![New live feed cards](https://storage.uploads.sh/…/live-feed.webp)
 ```
 
 **Best practices**
 
-- **Always write meaningful alt text** — it's what readers with images disabled (and
-  search) see, and it documents intent.
-- **Constrain width** for large shots so they don't dominate the page. Markdown can't
-  size images, so use an HTML tag:
-  `<img width="700" alt="..." src="https://media.example.com/...">`.
-- **Before/after** reads best side by side in a table:
+- **Meaningful alt text** always.
+- **Constrain width** on large shots (`--width` or `GH_SCREENSHOTS_DEFAULT_WIDTH`).
+  Markdown can't size images — the script emits `<img width="…">` when width is set.
+- **Before/after** side by side:
 
   ```markdown
   | Before | After |
@@ -205,20 +219,25 @@ HEREDOCs for `gh ... --body-file`):
   | <img width="380" src="…/before.png"> | <img width="380" src="…/after.png"> |
   ```
 
-- **One short caption line** under each image when context isn't obvious.
-- **GIFs** work the same way — upload the `.gif`, embed with `![...](url)`. (For heavy
-  GIFs prefer an MP4, but GitHub markdown won't autoplay an MP4 URL, so a GIF or a
-  still-with-link is usually the right call for an embed.)
+- **One short caption** when context isn't obvious.
+- **GIFs** upload the same way. Heavy motion: prefer GIF or still+link over MP4
+  (GitHub markdown won't autoplay MP4 URLs).
+
+If you only need hosting (no capture) and the uploads CLI is installed, prefer:
+
+```bash
+uploads put ./shot.png --pr 123 --alt "…" --width 700
+uploads attach ./before.png ./after.png   # infers current PR when possible
+```
 
 ## Notes
 
-- These uploads are **public and permanent** until someone deletes them. Don't upload
-  anything with secrets, tokens, internal dashboards with sensitive data, or customer
-  PII visible in the shot. Crop/redact first.
-- To remove one later:
-  `wrangler r2 object delete "$GH_SCREENSHOTS_BUCKET/<key>" --remote`. Note the public
-  URL is CDN-cached (commonly a few hours `max-age`), so it may keep serving a deleted
-  object from the edge until the cache expires — the object itself is gone from R2
-  immediately.
-- This is host-agnostic — the same hosted URLs work in GitHub issues, PR comments,
-  discussions, and markdown docs.
+- Uploads are **public** until deleted. Don't include secrets, tokens, sensitive
+  dashboards, or customer PII — crop/redact first.
+- **Cache:** the uploads API uses a short `Cache-Control` (~1 minute), so overwrites
+  show up quickly. Custom R2 domains may cache longer at the edge.
+- **Delete (R2 path):**  
+  `wrangler r2 object delete "$GH_SCREENSHOTS_BUCKET/<key>" --remote`  
+  With uploads: `uploads delete <key>` (needs `files:delete` on the token).
+- Hosted URLs work in issues, PR comments, discussions, and plain markdown docs.
+- Diagnose uploads setup with `uploads doctor`.
