@@ -51,12 +51,22 @@ Options:
                            el.dispatchEvent(new Event('change', { bubbles: true }));
 
   --upload               After capturing, forward the PNG to upload.sh and print
-                         its output (public URL + markdown). Pass --repo, --ref,
-                         --alt, and --img-width through to upload.sh (see below).
-  --repo  <owner/repo>   Forwarded to upload.sh (for key namespacing).
-  --ref   <pr|branch>    Forwarded to upload.sh (for key namespacing).
+                         its output (public URL + markdown). Upload flags below
+                         are forwarded to upload.sh.
+  --repo  <owner/repo>   Forwarded to upload.sh (key namespacing).
+  --ref   <pr|branch>    Forwarded to upload.sh (key namespacing).
   --alt   "text"         Forwarded to upload.sh (alt text for the markdown embed).
   --img-width <px>       Forwarded to upload.sh as --width (rendered image width).
+  --pr    <num>          Forwarded to upload.sh (stable PR attachment; uploads backend).
+  --issue <num>          Forwarded to upload.sh (stable issue attachment).
+  --comment              Forwarded to upload.sh (managed attachments comment).
+  --destination <id>     Forwarded to upload.sh (screenshots | gh | f).
+  --no-optimize          Forwarded to upload.sh (skip client-side image optimization).
+  --frame <id>           Forwarded to upload.sh (device/browser chrome).
+  --frame-url <url>      Forwarded to upload.sh (address bar for --frame browser).
+  --format human|url|markdown|json  Forwarded to upload.sh (stdout shape).
+  --backend auto|uploads|r2  Forwarded to upload.sh.
+  --env-file <path>      Forwarded to upload.sh.
   -h, --help             Show this help and exit.
 
 Examples:
@@ -70,7 +80,7 @@ Examples:
   capture.sh https://myapp.example.com \
     --selector ".card" --wait ".card" \
     --out /tmp/card.png \
-    --upload --repo myorg/myapp --ref 42 --alt "New card design" --img-width 700
+    --upload --pr 42 --alt "New card design" --img-width 700
 
   # Set a React-controlled input before capturing:
   capture.sh https://myapp.example.com \
@@ -104,6 +114,16 @@ UPLOAD_REPO=""
 UPLOAD_REF=""
 UPLOAD_ALT=""
 UPLOAD_IMG_WIDTH=""
+UPLOAD_PR=""
+UPLOAD_ISSUE=""
+UPLOAD_COMMENT=false
+UPLOAD_DESTINATION=""
+UPLOAD_NO_OPTIMIZE=false
+UPLOAD_FRAME=""
+UPLOAD_FRAME_URL=""
+UPLOAD_FORMAT=""
+UPLOAD_BACKEND=""
+UPLOAD_ENV_FILE=""
 
 if [ $# -eq 0 ]; then usage; exit 2; fi
 case "$1" in -h|--help) usage; exit 0;; esac
@@ -117,7 +137,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     # Value-taking options: guard $2 before reading it so a missing value gives
     # a clean error rather than a `set -u` "unbound variable" message.
-    --selector|--out|--width|--height|--wait|--eval|--repo|--ref|--alt|--img-width)
+    --selector|--out|--width|--height|--wait|--eval|--repo|--ref|--alt|--img-width|--pr|--issue|--destination|--frame|--frame-url|--format|--backend|--env-file)
       if [ $# -lt 2 ]; then
         echo "error: $1 requires a value" >&2; usage; exit 2
       fi
@@ -132,10 +152,20 @@ while [ $# -gt 0 ]; do
         --ref)         UPLOAD_REF="$2";;
         --alt)         UPLOAD_ALT="$2";;
         --img-width)   UPLOAD_IMG_WIDTH="$2";;
+        --pr)          UPLOAD_PR="$2";;
+        --issue)       UPLOAD_ISSUE="$2";;
+        --destination) UPLOAD_DESTINATION="$2";;
+        --frame)       UPLOAD_FRAME="$2";;
+        --frame-url)   UPLOAD_FRAME_URL="$2";;
+        --format)      UPLOAD_FORMAT="$2";;
+        --backend)     UPLOAD_BACKEND="$2";;
+        --env-file)    UPLOAD_ENV_FILE="$2";;
       esac
       shift 2;;
     --full-page)   FULL_PAGE=true;  shift;;
     --upload)      DO_UPLOAD=true;  shift;;
+    --comment)     UPLOAD_COMMENT=true; shift;;
+    --no-optimize) UPLOAD_NO_OPTIMIZE=true; shift;;
     -h|--help)     usage; exit 0;;
     *) echo "error: unknown option: $1" >&2; usage; exit 2;;
   esac
@@ -378,11 +408,21 @@ if [ "$DO_UPLOAD" = true ]; then
   echo "" >&2
   echo ">> uploading via upload.sh …" >&2
   UPLOAD_ARGS=("$OUT")
-  [ -n "$UPLOAD_REPO" ]      && UPLOAD_ARGS+=(--repo  "$UPLOAD_REPO")
-  [ -n "$UPLOAD_REF" ]       && UPLOAD_ARGS+=(--ref   "$UPLOAD_REF")
-  [ -n "$UPLOAD_ALT" ]       && UPLOAD_ARGS+=(--alt   "$UPLOAD_ALT")
-  [ -n "$UPLOAD_IMG_WIDTH" ] && UPLOAD_ARGS+=(--width "$UPLOAD_IMG_WIDTH")
-  # upload.sh prints URL and MARKDOWN on stdout — pass through directly.
+  [ -n "$UPLOAD_REPO" ]        && UPLOAD_ARGS+=(--repo "$UPLOAD_REPO")
+  [ -n "$UPLOAD_REF" ]         && UPLOAD_ARGS+=(--ref "$UPLOAD_REF")
+  [ -n "$UPLOAD_ALT" ]         && UPLOAD_ARGS+=(--alt "$UPLOAD_ALT")
+  [ -n "$UPLOAD_IMG_WIDTH" ]   && UPLOAD_ARGS+=(--width "$UPLOAD_IMG_WIDTH")
+  [ -n "$UPLOAD_PR" ]          && UPLOAD_ARGS+=(--pr "$UPLOAD_PR")
+  [ -n "$UPLOAD_ISSUE" ]       && UPLOAD_ARGS+=(--issue "$UPLOAD_ISSUE")
+  [ "$UPLOAD_COMMENT" = true ] && UPLOAD_ARGS+=(--comment)
+  [ -n "$UPLOAD_DESTINATION" ] && UPLOAD_ARGS+=(--destination "$UPLOAD_DESTINATION")
+  [ "$UPLOAD_NO_OPTIMIZE" = true ] && UPLOAD_ARGS+=(--no-optimize)
+  [ -n "$UPLOAD_FRAME" ]       && UPLOAD_ARGS+=(--frame "$UPLOAD_FRAME")
+  [ -n "$UPLOAD_FRAME_URL" ]   && UPLOAD_ARGS+=(--frame-url "$UPLOAD_FRAME_URL")
+  [ -n "$UPLOAD_FORMAT" ]      && UPLOAD_ARGS+=(--format "$UPLOAD_FORMAT")
+  [ -n "$UPLOAD_BACKEND" ]     && UPLOAD_ARGS+=(--backend "$UPLOAD_BACKEND")
+  [ -n "$UPLOAD_ENV_FILE" ]    && UPLOAD_ARGS+=(--env-file "$UPLOAD_ENV_FILE")
+  # upload.sh prints URL/markdown/json on stdout — pass through directly.
   "$UPLOAD_SCRIPT" "${UPLOAD_ARGS[@]}"
 else
   # Print the absolute output path as the final stdout line so callers can
