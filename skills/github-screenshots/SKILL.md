@@ -28,12 +28,12 @@ in the markdown. No repo bloat, no browser, no session — and stable URLs.
 
 ## Preferred path: uploads.sh CLI
 
-If the environment has `UPLOADS_TOKEN` set (or an `.env` with `UPLOADS_TOKEN`,
-e.g. `~/Code/uploads/.env`), skip the R2 setup below and use the
+If you have an uploads.sh token, skip the R2 setup below and use the
 `@buildinternet/uploads` CLI instead — it uploads via api.uploads.sh and
-handles PR/issue organization:
+handles PR/issue organization. Run it straight from npm (no checkout needed):
 
-    pnpm --dir ~/Code/uploads uploads put ./shot.png --pr 123 --env-file ~/Code/uploads/.env
+    export UPLOADS_TOKEN="<your uploads.sh token>"
+    npx @buildinternet/uploads@latest put ./shot.png --pr 123
 
 - `--pr <num>` / `--issue <num>` store the file under a **stable key**
   (`gh/<owner>/<repo>/pull/<num>/<name>` — no content hash), so re-uploading a
@@ -46,8 +46,17 @@ handles PR/issue organization:
 - Because URLs are stable per filename, embed once and re-upload to refresh
   the image — no need to edit the PR body again.
 
-Fall back to the direct-R2 flow below only when uploads.sh credentials are
-not available.
+The CLI reads `UPLOADS_TOKEN` and targets `https://api.uploads.sh` by default.
+If you keep credentials in the uploads monorepo's `~/Code/uploads/.env`, note
+that its variable is named `UPLOAD_API_TOKEN` (and it points the API at
+localhost), so bridge them first:
+
+    export UPLOADS_TOKEN="$UPLOAD_API_TOKEN"
+    export UPLOADS_API_URL=https://api.uploads.sh
+
+Run `npx @buildinternet/uploads@latest doctor` to verify auth without printing
+secrets. Fall back to the direct-R2 flow below only when uploads.sh credentials
+are not available.
 
 ## One-time setup
 
