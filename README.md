@@ -21,11 +21,9 @@ This detects your agent(s) and installs the skills into the right directory. Pas
 
 | Skill | What it does |
 |---|---|
-| [`github-screenshots`](./skills/github-screenshots) | Capture a webpage screenshot and host it for embedding in a GitHub PR or issue (agents can't drag-and-drop into the GitHub uploader). Prefers the [uploads CLI](https://www.npmjs.com/package/@buildinternet/uploads) when configured; falls back to direct R2. |
+| [`github-screenshots`](./skills/github-screenshots) | **Deprecated — moved to [buildinternet/uploads](https://github.com/buildinternet/uploads).** Install the current version with `npx skills add buildinternet/uploads` (workflow skill + `uploads-cli` reference). This copy is a pointer only. |
 
-Per-skill setup and usage live in each skill's `SKILL.md`. For
-`github-screenshots`, the preferred path is `uploads login`; direct R2 keys are
-documented in [`config.example`](./skills/github-screenshots/config.example).
+Per-skill setup and usage live in each skill's `SKILL.md`.
 
 ## License
 
